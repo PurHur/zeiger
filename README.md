@@ -1,7 +1,8 @@
 # Zeiger
 
 A small decision model that reads a **whole web page** and points at the element an instruction means — or at
-**"none of these"** — in one forward pass. This repository is the inference engine; bring your own checkpoint.
+**"none of these"** — in one forward pass. This repository is the inference engine; the weights live on the Hub:
+**[php-ai/zeiger-0.6b](https://huggingface.co/php-ai/zeiger-0.6b)** (pre-alpha).
 
 ```python
 from zeiger import Engine
@@ -137,7 +138,11 @@ python bench.py --model models/zeiger-0.6b --devices cuda,cpu
 
 ## Checkpoints
 
-The engine loads any export directory with this layout:
+```bash
+huggingface-cli download php-ai/zeiger-0.6b --local-dir models/zeiger-0.6b
+```
+
+The engine loads any directory with this layout:
 
 ```
 models/zeiger-0.6b/
