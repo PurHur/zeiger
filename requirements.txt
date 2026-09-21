@@ -1,0 +1,6 @@
+# torch is installed separately: see README (ROCm wheel for AMD, CPU wheel otherwise)
+# transformers is pinned below 5: the engine registers its own attention kernel ("causal_flash") through the
+# 4.x AttentionInterface, and 5.x resolves unknown implementation names as flash-attn hub kernels instead.
+transformers>=4.44,<5
+safetensors>=0.4
+numpy>=1.24
