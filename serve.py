@@ -19,11 +19,18 @@ ap.add_argument("--host", default="0.0.0.0")
 ap.add_argument("--device", default=os.environ.get("ZEIGER_DEVICE", "auto"))
 ap.add_argument("--threads", type=int, default=0)
 ap.add_argument("--token-budget", type=int, default=16384)
+ap.add_argument("--warmup", action="store_true", help="answer throwaway questions at start-up so the first real one is not the slow one")
+ap.add_argument("--cache-tokens", type=int, default=int(os.environ.get("ZEIGER_CACHE_TOKENS", "100000")),
+                help="remember tokenised option texts (0 disables); saves ~20 ms per repeated 300-option page")
+ap.add_argument("--release-after", type=float, default=float(os.environ.get("ZEIGER_RELEASE_AFTER", "0")),
+                help="seconds idle after which the weights leave the GPU, reloaded on the next request")
 ap.add_argument("--gpu-memory-gb", type=float, default=0.0, help="cap the allocator on a shared GPU")
 args = ap.parse_args()
 
 engine = Engine(args.model, device=args.device, threads=args.threads or None,
-                token_budget=args.token_budget, gpu_memory_gb=args.gpu_memory_gb)
+                token_budget=args.token_budget, gpu_memory_gb=args.gpu_memory_gb,
+                warmup=args.warmup or bool(int(os.environ.get("ZEIGER_WARMUP", "0"))),
+                cache_tokens=args.cache_tokens, release_after=args.release_after)
 LOCK = threading.Lock()   # one model, one GPU: serialise so batches stay whole
 print(json.dumps({"ready": True, **engine.info(), "port": args.port}), flush=True)
 

@@ -14,13 +14,9 @@ def tiny_engine() -> Engine:
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
     config = Qwen3Config(vocab_size=len(tokenizer), hidden_size=64, intermediate_size=128, num_hidden_layers=2,
                          num_attention_heads=4, num_key_value_heads=2, head_dim=16, max_position_embeddings=4096)
-    engine = Engine.__new__(Engine)
-    engine.model = Zeiger(AutoModel.from_config(config, attn_implementation=ATTENTION), 2).eval()
-    engine.tokenizer, engine.config = tokenizer, {"arch": "qwen3-marker"}
-    engine.device, engine.dtype = torch.device("cpu"), torch.float32
-    engine.max_len, engine.chunk_tokens, engine.token_budget = 131072, 1024, 8192
-    engine.temperatures, engine.stats = {}, {"questions": 0, "batches": 0, "ms": 0.0}
-    return engine
+    model = Zeiger(AutoModel.from_config(config, attn_implementation=ATTENTION), 2).eval()
+    return Engine.from_parts(model, tokenizer, {"arch": "qwen3-marker", "max_len": 131072, "chunk_tokens": 1024},
+                             device="cpu", token_budget=8192)
 
 
 def choice(n: int) -> dict:
@@ -51,5 +47,9 @@ assert yes_no["type"] == "noul" and 0.0 <= yes_no["noul"] <= 1.0
 score = engine.decide(state, {"q": {"type": "score", "instructions": "How relevant?",
                                     "criteria": ["not at all", "a little", "very"]}})["q"]
 assert score["type"] == "score" and score["score"] in (0, 1, 2)
+
+cached = engine.decide(state, {"q": choice(300)})["q"]          # the option texts are already tokenised
+assert engine.info()["token_cache"]["hits"] > 0, "the token cache never hit"
+assert set(cached["probabilities"]) == set(choice(300)["criteria"])
 
 print("zeiger smoke tests passed")

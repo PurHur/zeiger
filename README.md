@@ -76,6 +76,39 @@ Question types: `choice` (pick one option, `"none"` allowed), `noul` (yes/no —
 statement holds) and `score` (ordinal levels). A question whose options do not fit the window returns
 `{"error": "options do not fit the window"}` instead of a guess.
 
+## Options
+
+The model is loaded once and stays in memory for the life of the process. Three knobs control what else is kept
+there:
+
+```python
+Engine("models/zeiger-0.6b",
+       warmup=True,            # answer throwaway questions at start-up so the first real one is not the slow one
+       cache_tokens=100_000,   # remember tokenised option texts across questions about the same page
+       release_after=0,        # >0 seconds: hand the GPU back while idle, reload on the next call
+       token_budget=16384,     # padded tokens per micro-batch
+       gpu_memory_gb=0,        # cap the allocator when the GPU is shared
+       threads=None,           # CPU threads
+       dtype=None)             # bf16 on GPU, fp32 on CPU by default
+```
+
+`cache_tokens` matters when an agent asks several questions about one page: option texts are tokenised once
+instead of per question. Measured here, per repeated question:
+
+| options | tokenise | cached | saved |
+|---:|---:|---:|---:|
+| 60 | 8.9 ms | 0.1 ms | 8.8 ms |
+| 300 | 20.4 ms | 0.4 ms | 20.0 ms |
+| 1,500 | 98.0 ms | 2.8 ms | 95.2 ms |
+
+That is CPU time spent before the model runs, so it comes straight off end-to-end latency.
+
+`release_after` is for a shared accelerator: after that many idle seconds the weights move off the GPU and the
+next request brings them back. `Engine.release()` does it on demand, and `GET /` reports `resident`.
+
+The same options are environment variables for the server and the containers: `ZEIGER_WARMUP`,
+`ZEIGER_CACHE_TOKENS`, `ZEIGER_RELEASE_AFTER`, `ZEIGER_DEVICE`, `ZEIGER_MODEL`, `ZEIGER_PORT`.
+
 ## Model
 
 `Qwen3-0.6B-Base` (Apache-2.0, 28 layers) with its language-model head removed: the transformer body is an

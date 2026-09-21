@@ -14,6 +14,8 @@ services:
       - zeiger-cache:/cache            # the tokenizer is read from the checkpoint; this is only a fallback
     environment:
       ZEIGER_DEVICE: cpu
+      ZEIGER_WARMUP: "1"              # pay the first-call cost at start-up, not on the first request
+      ZEIGER_CACHE_TOKENS: "100000"   # remember tokenised option texts across questions about the same page
     restart: unless-stopped
 
   zeiger-rocm:
@@ -36,6 +38,9 @@ services:
       - zeiger-cache:/cache
     environment:
       ZEIGER_DEVICE: cuda                         # ROCm presents itself to torch as "cuda"
+      ZEIGER_WARMUP: "1"
+      ZEIGER_CACHE_TOKENS: "100000"
+      ZEIGER_RELEASE_AFTER: "0"                   # >0 seconds: hand the GPU back while idle, reload on demand
       LD_PRELOAD: /opt/rocm-7.2.3/lib/libhsa-runtime64.so.1
       TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: "1"
       HSA_OVERRIDE_GFX_VERSION: ""                # set e.g. 11.0.0 only if your card needs it

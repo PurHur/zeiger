@@ -75,15 +75,35 @@ def serialise(state: Any) -> str:
     return state if isinstance(state, str) else json.dumps(state, ensure_ascii=False)
 
 
-def encode(tok, question: Question, max_len: int, chunk_tokens: int = 0) -> Encoded | None:
+def encode(tok, question: Question, max_len: int, chunk_tokens: int = 0, cache: "TokenCache | None" = None) -> Encoded | None:
     """Tokenise a question, or return None when its options do not fit `max_len`.
 
     A question that does not fit is never answered on a truncated option list: the caller reports it instead.
     """
-    chunks = _chunks(tok, question, max_len, chunk_tokens)
+    chunks = _chunks(tok, question, max_len, chunk_tokens, cache)
     if sum(len(ms) for _, ms in chunks) != len(question.keys):
         return None
     return Encoded(chunks=chunks, keys=question.keys, qtype=question.qtype)
+
+
+class TokenCache(dict):
+    """Option and state texts repeat across questions about the same page; their token ids do not change."""
+
+    def __init__(self, limit: int = 100_000) -> None:
+        super().__init__()
+        self.limit = limit
+        self.hits = self.misses = 0
+
+    def tokenise(self, tok, text: str) -> list[int]:
+        cached = self.get(text)
+        if cached is not None:
+            self.hits += 1
+            return cached
+        self.misses += 1
+        ids = _tokenise(tok, text)
+        if len(self) < self.limit:
+            self[text] = ids
+        return ids
 
 
 def _tokenise(tok, text: str) -> list[int]:
@@ -91,13 +111,14 @@ def _tokenise(tok, text: str) -> list[int]:
     return tok(clean, add_special_tokens=False)["input_ids"]
 
 
-def _sequence(tok, question: Question, max_len: int) -> list[Chunk]:
+def _sequence(tok, question: Question, max_len: int, cache: "TokenCache | None" = None) -> list[Chunk]:
     """One sequence: state, question, then every option followed by its marker."""
+    encode_text = cache.tokenise if cache is not None else (lambda t, text: _tokenise(t, text))
     marker, eos = tok.convert_tokens_to_ids(MARKER), tok.eos_token_id or tok.pad_token_id
-    head = _tokenise(tok, f"\n{question.kind} question: {question.instructions}\n")[:HEAD_TOKENS]
-    options = [_tokenise(tok, " " + text)[:OPTION_TOKENS] for text in question.options()]
+    head = encode_text(tok, f"\n{question.kind} question: {question.instructions}\n")[:HEAD_TOKENS]
+    options = [encode_text(tok, " " + text)[:OPTION_TOKENS] for text in question.options()]
     room = max_len - (len(head) + sum(len(o) + 1 for o in options) + 1)
-    ids = _tokenise(tok, serialise(question.state))[: max(64, min(STATE_TOKENS, room))] + head
+    ids = encode_text(tok, serialise(question.state))[: max(64, min(STATE_TOKENS, room))] + head
     markers = []
     for option in options:
         ids.extend(option)
@@ -109,20 +130,21 @@ def _sequence(tok, question: Question, max_len: int) -> list[Chunk]:
     return [(ids, markers)]
 
 
-def _chunks(tok, question: Question, max_len: int, chunk_tokens: int) -> list[Chunk]:
+def _chunks(tok, question: Question, max_len: int, chunk_tokens: int, cache: "TokenCache | None" = None) -> list[Chunk]:
     """Chunked-prefix encoding: every chunk repeats the state and question, then carries a run of options.
 
     Attention cost is linear in page size, and a page is not limited by the backbone's window. A question that
     fits one chunk is encoded as a single sequence, byte for byte.
     """
     if not chunk_tokens:
-        return _sequence(tok, question, max_len)
+        return _sequence(tok, question, max_len, cache)
+    encode_text = cache.tokenise if cache is not None else (lambda t, text: _tokenise(t, text))
     marker, eos = tok.convert_tokens_to_ids(MARKER), tok.eos_token_id or tok.pad_token_id
-    head = _tokenise(tok, f"\n{question.kind} question: {question.instructions}\n")[:HEAD_TOKENS]
-    options = [_tokenise(tok, " " + text)[:OPTION_TOKENS] for text in question.options()]
-    state = _tokenise(tok, serialise(question.state))
+    head = encode_text(tok, f"\n{question.kind} question: {question.instructions}\n")[:HEAD_TOKENS]
+    options = [encode_text(tok, " " + text)[:OPTION_TOKENS] for text in question.options()]
+    state = encode_text(tok, serialise(question.state))
     if len(state[:STATE_TOKENS]) + len(head) + sum(len(o) + 1 for o in options) + 1 <= chunk_tokens:
-        return _sequence(tok, question, max(max_len, chunk_tokens))
+        return _sequence(tok, question, max(max_len, chunk_tokens), cache)
 
     prefix = state[: min(STATE_TOKENS, max(64, chunk_tokens // 2 - len(head)))] + head
     room = max(OPTION_TOKENS + 1, chunk_tokens - len(prefix) - 1)
