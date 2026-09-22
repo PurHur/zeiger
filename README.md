@@ -160,13 +160,13 @@ The engine loads any directory with this layout:
 ```
 models/zeiger-0.6b/
   model.safetensors        # backbone + head
-  rl_agent_config.json     # arch, chunk_tokens, max_len, temperature_by_options
+  config.json              # arch, chunk_tokens, max_len, temperature_by_options
   encoder/                 # the backbone's config
   tokenizer/
 ```
 
-`rl_agent_config.json` carries the window, chunk size and calibration temperatures, so a checkpoint brings its
-own serving settings.
+`config.json` carries the window, chunk size and calibration temperatures, so a checkpoint brings its own serving
+settings. Older checkpoints name it `rl_agent_config.json`; both load.
 
 ## Tests
 

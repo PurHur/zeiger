@@ -75,18 +75,31 @@ class Zeiger(nn.Module):
         return logits.masked_fill(~marker_mask, -1e4), None
 
 
+def _serving_config(directory: Path) -> dict | None:
+    """config.json at the root (what the Hub counts downloads by), or rl_agent_config.json in older checkpoints.
+
+    A plain transformers config.json has no "arch" and is not a serving config.
+    """
+    for name in ("config.json", "rl_agent_config.json"):
+        file = directory / name
+        if file.is_file():
+            config = json.loads(file.read_text())
+            if "arch" in config:
+                return config
+    return None
+
+
 def load(path: str | os.PathLike, max_len: int | None = None) -> tuple[Zeiger, object, dict]:
     """Load an exported checkpoint directory, or start from the base model when given a model id."""
     from transformers import AutoConfig, AutoModel, AutoTokenizer
 
     register_attention()
     directory = Path(path)
-    config_file = directory / "rl_agent_config.json"
+    config = _serving_config(directory)
 
-    if config_file.exists():
+    if config is not None:
         from safetensors.torch import load_file
 
-        config = json.loads(config_file.read_text())
         if config.get("arch", ARCH) != ARCH:
             raise ValueError(f"{directory} holds a '{config['arch']}' model; this engine serves '{ARCH}'")
         tokenizer = AutoTokenizer.from_pretrained(directory / "tokenizer")
