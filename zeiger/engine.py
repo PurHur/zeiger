@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import time
+from functools import cache
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -27,6 +29,26 @@ def resolve_device(device: str | torch.device = "auto") -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+@cache
+def _cpu() -> tuple[int, bool]:
+    """Physical cores, and whether the CPU has native bf16 (AVX512-BF16 or AMX)."""
+    cores, flags, package = set(), set(), "0"
+    try:
+        with open("/proc/cpuinfo") as info:
+            for line in info:
+                key, _, value = line.partition(":")
+                key = key.strip()
+                if key == "physical id":
+                    package = value.strip()
+                elif key == "core id":
+                    cores.add((package, value.strip()))
+                elif key == "flags" and not flags:
+                    flags = set(value.split())
+    except OSError:
+        pass
+    return len(cores) or os.cpu_count() or 1, bool(flags & {"avx512_bf16", "amx_bf16"})
+
+
 class Engine:
     """Answers questions about a page.
 
@@ -37,8 +59,8 @@ class Engine:
     def __init__(self, checkpoint: str | Path, *, device: str | torch.device = "auto", max_len: int | None = None,
                  threads: int | None = None, gpu_memory_gb: float = 0.0, **options: Any) -> None:
         self.device = resolve_device(device)
-        if threads and self.device.type == "cpu":
-            torch.set_num_threads(threads)
+        if self.device.type == "cpu":
+            torch.set_num_threads(threads or _cpu()[0])
         if gpu_memory_gb and self.device.type == "cuda":
             index = self.device.index if self.device.index is not None else torch.cuda.current_device()
             total = torch.cuda.get_device_properties(index).total_memory
@@ -59,7 +81,7 @@ class Engine:
                    cache_tokens: int = 100_000, release_after: float = 0.0) -> None:
         self.model, self.tokenizer, self.config = model, tokenizer, config
         self.model.to(self.device).eval()
-        self.dtype = dtype or (torch.bfloat16 if self.device.type == "cuda" else torch.float32)
+        self.dtype = dtype or (torch.bfloat16 if self.device.type == "cuda" or _cpu()[1] else torch.float32)
         self.max_len = int(config.get("max_len") or WINDOW)
         self.chunk_tokens = config.get("chunk_tokens", 0) if chunk_tokens is None else chunk_tokens
         self.token_budget = token_budget

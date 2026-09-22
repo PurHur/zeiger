@@ -89,8 +89,8 @@ Engine("models/zeiger-0.6b",
        release_after=0,        # >0 seconds: hand the GPU back while idle, reload on the next call
        token_budget=16384,     # padded tokens per micro-batch
        gpu_memory_gb=0,        # cap the allocator when the GPU is shared
-       threads=None,           # CPU threads
-       dtype=None)             # bf16 on GPU, fp32 on CPU by default
+       threads=None,           # CPU threads; default one per physical core
+       dtype=None)             # bf16 on GPU and on CPUs with native bf16, otherwise fp32
 ```
 
 `cache_tokens` matters when an agent asks several questions about one page: option texts are tokenised once
@@ -128,6 +128,19 @@ options, never O(L²) in page length.
 
 Tuned for AMD Strix Halo (gfx1151): a mask-free causal attention kernel keeps SDPA on its flash path, bf16 on
 GPU, and micro-batches binned by chunk length so short questions do not pay for long ones.
+
+On CPU the engine runs bf16 when the processor has it natively (AVX512-BF16 or AMX) and one thread per physical
+core: SMT siblings compete for the same matrix units, and oversubscribing them was up to 14x slower here. Measured
+on a Ryzen AI Max+ 395 (16 cores), batch 1:
+
+| options | fp32 | bf16 |
+|---:|---:|---:|
+| 10 | 672 ms | 340 ms |
+| 60 | 2.3 s | 1.2 s |
+| 150 | 12.0 s | 4.9 s |
+
+bf16 and fp32 gave the same answer on 80 of 80 held-out questions (mean confidence difference 0.0014). The GPU is
+still the fast path: 140 ms per short question, 1.5 s per whole page.
 
 PyTorch has no Vulkan inference backend, and llama.cpp cannot run this architecture, so the choice on AMD is
 ROCm or CPU. Measure both:
