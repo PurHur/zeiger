@@ -5,3 +5,4 @@ models/
 bench-results.json
 *.log
 models/
+.trash/

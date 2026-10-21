@@ -13,7 +13,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY zeiger/ ./zeiger/
-COPY serve.py bench.py test_zeiger.py ./
+COPY zlab/ ./zlab/
+COPY serve.py bench.py test_zeiger.py test_zeiger2.py ./
 
 ENV ZEIGER_MODEL=/models/zeiger-0.6b \
     ZEIGER_PORT=8173 \

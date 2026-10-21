@@ -2,7 +2,8 @@
 
 A small decision model that reads a **whole web page** and points at the element an instruction means — or at
 **"none of these"** — in one forward pass. This repository is the inference engine; the weights live on the Hub:
-**[php-ai/zeiger-0.6b](https://huggingface.co/php-ai/zeiger-0.6b)** (pre-alpha).
+**[php-ai/zeiger-0.6b](https://huggingface.co/php-ai/zeiger-0.6b)** (pre-alpha) and its successor candidate
+**[php-ai/zeiger2-3.5-0.8b](https://huggingface.co/php-ai/zeiger2-3.5-0.8b)** (experimental, see [Zeiger2](#zeiger2)).
 
 ```python
 from zeiger import Engine
@@ -34,7 +35,7 @@ python -m venv .venv && . .venv/bin/activate
 # AMD (ROCm):
 pip install --index-url https://download.pytorch.org/whl/rocm7.0 torch==2.10.0
 # NVIDIA or CPU: the matching torch wheel from pytorch.org
-pip install -r requirements.txt          # transformers is pinned <5: see requirements.txt
+pip install -r requirements.txt          # transformers 4.x or 5.x; Zeiger2 needs 5.17+
 ```
 
 On ROCm, start any process with:
@@ -76,6 +77,29 @@ curl -s localhost:8173/decide -H 'content-type: application/json' -d '{
 Question types: `choice` (pick one option, `"none"` allowed), `noul` (yes/no — the answer is the probability the
 statement holds) and `score` (ordinal levels). A question whose options do not fit the window returns
 `{"error": "options do not fit the window"}` instead of a guess.
+
+## Zeiger2
+
+The same `Engine` serves **[Zeiger2 3.5-0.8B](https://huggingface.co/php-ai/zeiger2-3.5-0.8b)**: it reads the
+checkpoint's `config.json` and, for a Zeiger2 model (`"arch": "zlab-..."`), returns a `Zeiger2Engine` with the same
+`decide()`, answers and HTTP API. Nothing changes for the caller:
+
+```bash
+hf download php-ai/zeiger2-3.5-0.8b --local-dir models/zeiger2-3.5-0.8b
+python serve.py --model models/zeiger2-3.5-0.8b
+python test_zeiger2.py models/zeiger2-3.5-0.8b
+```
+
+Zeiger2 is `Qwen3.5-0.8B-Base` (Gated DeltaNet + full attention) with non-causal full-attention layers, a memory
+head and edit-pair training; every question is answered in the shown and the reversed option order and the two are
+averaged. Its model code is the inference part of the zeiger-lab training pipeline, in `zlab/`. Against Zeiger 0.6B
+on the same 2,000 held-out questions: score 0.838 vs 0.816 (whole pages 0.825 vs 0.765), Decision Index 17.6 vs
+14.1 — but about 3x slower on AMD, where its DeltaNet layers run on reference kernels. Details on the model card.
+
+* needs transformers 5.17 or newer; on NVIDIA install `flash-linear-attention` and `causal-conv1d` for the fast
+  DeltaNet kernels
+* `Engine(path, two_order=False)` answers each question once: half the latency, a little less accuracy
+* `cache_tokens` and `dtype` do not apply (bf16 on GPU, fp32 on CPU)
 
 ## Options
 
@@ -172,8 +196,9 @@ settings. Older checkpoints name it `rl_agent_config.json`; both load.
 
 ```bash
 python test_zeiger.py       # CPU, tiny random backbone, no checkpoint needed
+python test_zeiger2.py models/zeiger2-3.5-0.8b   # a real Zeiger2 checkpoint
 ```
 
 ## Licence
 
-Code: Apache-2.0. A checkpoint carries its own terms, depending on what it was trained on.
+Code: Apache-2.0 (zeiger/ and zlab/). A checkpoint carries its own terms, depending on what it was trained on.

@@ -56,6 +56,15 @@ class Engine:
         answers = engine.decide(state, {"q": {"type": "choice", "instructions": ..., "criteria": {...}}})
     """
 
+    def __new__(cls, checkpoint: str | Path | None = None, *args: Any, **kwargs: Any) -> "Engine":
+        if cls is Engine and checkpoint is not None:  # a Zeiger2 checkpoint gets its own engine, same interface
+            from .model import _serving_config
+            from .zeiger2 import Zeiger2Engine, is_zeiger2
+
+            if is_zeiger2(_serving_config(Path(checkpoint))):
+                return super().__new__(Zeiger2Engine)
+        return super().__new__(cls)
+
     def __init__(self, checkpoint: str | Path, *, device: str | torch.device = "auto", max_len: int | None = None,
                  threads: int | None = None, gpu_memory_gb: float = 0.0, **options: Any) -> None:
         self.device = resolve_device(device)

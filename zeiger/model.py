@@ -13,7 +13,7 @@ from torch import Tensor, nn
 ARCH = "qwen3-marker"
 BASE_MODEL = "Qwen/Qwen3-0.6B-Base"
 WINDOW = 32768
-ATTENTION = "causal_flash"
+ATTENTION = "zeiger_causal"
 
 _registered = False
 
@@ -26,7 +26,7 @@ def register_attention() -> None:
     from transformers.modeling_utils import AttentionInterface
     from transformers.masking_utils import AttentionMaskInterface
 
-    def causal_flash(module, query, key, value, attention_mask=None, dropout=0.0, scaling=None, **_):
+    def zeiger_causal(module, query, key, value, attention_mask=None, dropout=0.0, scaling=None, **_):
         repeats = query.shape[1] // key.shape[1]
         if repeats > 1:
             key = key.repeat_interleave(repeats, dim=1)
@@ -36,7 +36,7 @@ def register_attention() -> None:
                                              is_causal=True, scale=scaling)
         return out.transpose(1, 2).contiguous(), None
 
-    AttentionInterface.register(ATTENTION, causal_flash)
+    AttentionInterface.register(ATTENTION, zeiger_causal)
     AttentionMaskInterface.register(ATTENTION, lambda *a, **k: None)
     _registered = True
 

@@ -1,6 +1,6 @@
 # torch is installed separately: see README (ROCm wheel for AMD, CPU wheel otherwise)
-# transformers is pinned below 5: the engine registers its own attention kernel ("causal_flash") through the
-# 4.x AttentionInterface, and 5.x resolves unknown implementation names as flash-attn hub kernels instead.
-transformers>=4.44,<5
+# Zeiger 0.6B runs on transformers 4.x and 5.x (tested 4.57.6 and 5.17.0); Zeiger2 checkpoints (Qwen3.5 backbone)
+# need 5.17 or newer.
+transformers>=4.44,<6
 safetensors>=0.4
 numpy>=1.24
